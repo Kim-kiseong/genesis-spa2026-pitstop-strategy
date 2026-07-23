@@ -50,32 +50,12 @@ class PitstopEnv(gym.Env):
         
         return obs, reward, terminated, truncated, info
 
-    def action_masks(self):
-        """
-        MaskablePPO가 매 랩마다 호출하여 '현재 가능한 행동'이 무엇인지 확인하는 함수.
-        반환값: [계속 주행 가능 여부(True/False), 피트인 가능 여부(True/False)]
-        """
-        masks = [True, True] # 기본적으로 주행(0), 피트인(1) 둘 다 가능하다고 가정
-        
-        # 규칙 1: 조기 피트스탑 방지 (stint_lap이 3 미만일 때는 피트인 불가)
-        if self.stint_lap < 3:
-            masks[1] = False
-            
-        # 규칙 2: 연료 고갈 강제 피트인 (stint_lap이 34 이상 도달 시 계속 주행 불가)
-        if self.stint_lap >= 34:
-            masks[0] = False
-            
-        return masks
-
 if __name__ == "__main__":
+    # 환경 동작 테스트
     env = PitstopEnv()
     obs, _ = env.reset()
-    print("✅ 초기 상태:", obs, "| 현재 가능 행동(Mask):", env.action_masks())
+    print("✅ 환경 생성 및 reset 성공! 초기 상태:", obs)
     
     # 1스텝 동작 테스트 (Action 0: 계속 주행)
     obs, reward, terminated, truncated, info = env.step(0)
-    print("✅ 1랩 주행 후 상태:", obs, "| 현재 가능 행동(Mask):", env.action_masks())
-
-    # 강제로 34랩으로 만들어보기 (규칙 2 테스트)
-    env.stint_lap = 34
-    print("🚨 연료 고갈 임박(34랩) 시 가능 행동(Mask):", env.action_masks())
+    print("✅ step(0) 실행 성공! 다음 상태:", obs, "보상:", reward)
