@@ -22,7 +22,10 @@ WEC 하이퍼카 클래스의 피트스탑은 레이스 결과를 가르는 핵�
 ## 📂 폴더 구조 (Directory Structure)
 ```text
 genesis-spa2026-pitstop-strategy/
-├── data/                  # [git-ignored] 원본 CSV 및 정제된 parquet 데이터
+├── data/                 # [git-ignored] 원본 CSV 및 정제된 parquet 데이터
+├── shared/
+│   ├── __init__.py
+│   └── schema.py          # 확정된 칼럼명이 사는 곳 
 ├── preprocessing/         # 데이터 전처리, 날씨 결합 및 피처 엔지니어링 
 ├── evaluator/             # XGBoost 성공 확률 평가기 모델 학습 및 SHAP 분석
 ├── rl_env/                # Gymnasium 커스텀 환경 구축 및 MaskablePPO 에이전트 훈련
