@@ -7,6 +7,12 @@ data/
 *.pkl
 *.pth
 
+# XGBoost 네이티브 포맷 모델 산출물 (evaluator/xgb_evaluator.py::CANDIDATE_MODEL_PATHS)
+evaluator/podium_evaluator.json
+evaluator/feature_names.json
+evaluator/xgb_podium_model.json
+evaluator/xgb_podium_model.ubj
+
 # 파이썬 캐시 및 가상환경
 __pycache__/
 .pytest_cache/
