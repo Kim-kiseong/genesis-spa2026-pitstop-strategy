@@ -14,14 +14,14 @@ import pandas as pd
 
 from config import (
     RAW_DIR, PROCESSED_DIR, TRAIN_EVENTS, VAL_EVENTS, CLASS_FILTER,
-    PIT_LOSS_DEFAULT_S, PODIUM_RANK_THRESHOLD,
+    PIT_LOSS_DEFAULT_S, PODIUM_RANK_THRESHOLD, MAX_STINT_LAPS,
 )
 from loaders import load_event
 from stint import reconstruct_stints, compute_pit_loss
 from weather import merge_weather
 from competition import reconstruct_competition_state, compute_lap_progress_ratio
 from track_status import apply_flag_at_fl
-from outliers import drop_track_status_outliers, flag_pit_loss_outliers
+from outliers import drop_track_status_outliers, flag_pit_loss_outliers, drop_degenerate_podium_events
 
 
 def process_event(event: dict) -> pd.DataFrame | None:
@@ -35,6 +35,9 @@ def process_event(event: dict) -> pd.DataFrame | None:
     # Day 1: 스틴트 복원
     laps = reconstruct_stints(laps)
     laps = compute_pit_loss(laps, PIT_LOSS_DEFAULT_S)
+
+    # 교수님 피드백 반영: 스틴트 진행률(0~1 정규화) — 서킷/경기시간이 달라도 비교 가능하게.
+    laps["STINT_PROGRESS_RATIO"] = (laps["STINT_LAP"] / MAX_STINT_LAPS).clip(upper=1.0)
 
     # Day 2: 날씨 결합
     laps = merge_weather(laps, weather, circuit=event["circuit"], event_id=event_id)
@@ -73,6 +76,15 @@ def build_split(events: list[dict], split_name: str) -> pd.DataFrame:
         raise RuntimeError(f"[{split_name}] 처리된 이벤트가 없습니다. raw_data/를 확인하세요.")
 
     result = pd.concat(all_laps, ignore_index=True)
+
+    # [보류 — 팀 내부 회의 후 결정 예정] 참가 차량이 너무 적어 PODIUM 라벨이 왜곡된 이벤트
+    # (실측: 2021·2022 SPA 전원 포디움) 제외 여부. 함수는 outliers.py에 준비돼 있으니
+    # 팀 결정 나면 아래 두 줄 주석만 풀면 바로 적용됨.
+    # result, degenerate = drop_degenerate_podium_events(result)
+    # if len(degenerate):
+    #     degenerate.to_parquet(PROCESSED_DIR / f"dropped_degenerate_podium_{split_name}.parquet", index=False)
+    #     print(f"  라벨 왜곡으로 드롭된 랩: {len(degenerate)}행 -> dropped_degenerate_podium_{split_name}.parquet")
+
     dropped_total = pd.concat(all_dropped, ignore_index=True) if all_dropped else pd.DataFrame()
     if len(dropped_total):
         dropped_total.to_parquet(PROCESSED_DIR / f"dropped_redflag_{split_name}.parquet", index=False)
