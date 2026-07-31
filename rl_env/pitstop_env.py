@@ -11,23 +11,24 @@ class PitstopEnv(gym.Env):
     """
     WEC 제네시스 피트스탑 의사결정 시뮬레이션 환경 (XGBoost 연동 버전)
     """
-    def __init__(self):
+    def __init__(self, evaluator=None):
         super(PitstopEnv, self).__init__()
-        
+
         # Action Space: 0 (계속 주행), 1 (피트인)
         self.action_space = spaces.Discrete(2)
-        
+
         # Observation Space: 팀원 B의 FEATURE_COLUMNS (7개) 기준
         # ["LAP_PROGRESS_RATIO", "STINT_LAP", "CLASS_POSITION", "GAP_TO_LEADER_SEC", "GAP_TO_AHEAD_SEC", "WEATHER_CATEGORY", "TRACK_TEMP"]
         low = np.array([0.0, 0, 1, -300.0, -300.0, 0, 0.0], dtype=np.float32)
         high = np.array([1.0, 40, 30, 300.0, 300.0, 2, 100.0], dtype=np.float32)
         self.observation_space = spaces.Box(low=low, high=high, dtype=np.float32)
-        
+
         self.current_lap = 1
         self.stint_lap = 1
-        
-        #  팀원 B가 제공한 더미 평가기
-        self.evaluator = DummyPodiumEvaluator()
+
+        # 평가기 주입 지점: 인자로 안 넘기면 기존처럼 더미 평가기 사용(하위호환).
+        # Day3부터는 evaluator/xgb_evaluator.py::load_evaluator()로 실제 XGBoost 모델을 넘긴다.
+        self.evaluator = evaluator if evaluator is not None else DummyPodiumEvaluator()
         self.current_podium_prob = 0.0
 
     def get_obs(self):
