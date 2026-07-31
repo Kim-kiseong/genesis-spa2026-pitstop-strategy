@@ -4,5 +4,6 @@ pandas>=2.0
 pyarrow>=14.0
 xgboost>=2.0
 joblib>=1.4
+openpyxl>=3.1  # export_baseline_excel.py: 결과 CSV -> 엑셀 변환용
 
 # Day4: MaskablePPO 도입 시 추가 예정 (sb3_contrib, stable-baselines3) — 아직 미착수(sprint_checklist.yaml)
