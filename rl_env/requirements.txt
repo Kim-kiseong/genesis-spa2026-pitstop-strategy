@@ -1,0 +1,8 @@
+gymnasium>=1.3
+numpy>=2.0
+pandas>=2.0
+pyarrow>=14.0
+xgboost>=2.0
+joblib>=1.4
+
+# Day4: MaskablePPO 도입 시 추가 예정 (sb3_contrib, stable-baselines3) — 아직 미착수(sprint_checklist.yaml)
