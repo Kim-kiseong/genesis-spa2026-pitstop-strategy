@@ -23,6 +23,21 @@ FEATURE_COLUMNS: list[str] = [
     "TRACK_TEMP",           # 트랙 온도
 ]
 
+# 슬라이딩 윈도우 추세 피처 (Day4, RL 시뮬레이션 중 실시간 계산 — rl_env/trend_features.py 참고)
+# 최근 TREND_WINDOW_LAPS랩의 CLASS_POSITION/GAP_TO_LEADER_SEC에 대해
+# 변화량(change=끝값-시작값)과 선형회귀 기울기(slope)를 계산해 붙인다.
+TREND_WINDOW_LAPS: int = 5
+
+TREND_FEATURE_COLUMNS: list[str] = [
+    "pos_change_5lap",
+    "gap_change_5lap",
+    "pos_slope_5lap",
+    "gap_slope_5lap",
+]
+
+# 팀원 B가 트렌드 피처까지 포함해 재학습한 모델(xgb_podium_model_tuned2.joblib) 입력 순서.
+FEATURE_COLUMNS_TREND: list[str] = FEATURE_COLUMNS + TREND_FEATURE_COLUMNS
+
 # 학습 라벨 — 최종 클래스 순위 3위 이내 여부 (bool)
 TARGET_COLUMN: str = "PODIUM"
 

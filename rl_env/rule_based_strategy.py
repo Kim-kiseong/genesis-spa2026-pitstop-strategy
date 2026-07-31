@@ -26,7 +26,7 @@ import pandas as pd
 
 from evaluator.schema import MAX_STINT_LAPS, MIN_STINT_LAPS
 from evaluator.xgb_evaluator import load_evaluator
-from rl_env.pitstop_env import PitstopEnv
+from rl_env.pitstop_env import PitstopEnv, load_race_laps
 
 PODIUM_PROB_THRESHOLD = 0.7
 TIRE_WEAR_THRESHOLD = 0.8
@@ -94,7 +94,8 @@ def run_rule_based_episode(env: PitstopEnv, max_steps: int = 200) -> RuleBasedRe
 
 if __name__ == "__main__":
     evaluator = load_evaluator()
-    env = PitstopEnv(evaluator=evaluator)
+    race_laps = load_race_laps()
+    env = PitstopEnv(race_laps=race_laps, evaluator=evaluator)
 
     result = run_rule_based_episode(env)
     df = result.to_dataframe()
