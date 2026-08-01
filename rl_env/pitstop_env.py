@@ -12,6 +12,7 @@ from evaluator.schema import (
     MIN_STINT_LAPS,
     MAX_STINT_LAPS,
     TREND_WINDOW_LAPS,
+    TRACK_STATUS_CODE_MAP,
 )
 from evaluator.dummy_evaluator import DummyPodiumEvaluator
 from rl_env.trend_features import SlidingTrendWindow
@@ -19,6 +20,31 @@ from rl_env.trend_features import SlidingTrendWindow
 DEFAULT_VAL_PARQUET = (
     Path(__file__).resolve().parent.parent / "preprocessing" / "processed" / "laps_val.parquet"
 )
+
+TRACK_STATUS_COLUMN = "TRACK_STATUS"
+
+
+def encode_track_status(status: str) -> dict[str, float]:
+    """
+    TRACK_STATUS(GREEN/SAFETY_CAR/FULL_COURSE_YELLOW/FINISH) 하나를 B의 트랙상태
+    모델(rl_env/podium_evaluator_trend_grid.json)이 기대하는 7개 컬럼으로 인코딩한다.
+    매핑은 evaluator/schema.py::TRACK_STATUS_CODE_MAP 주석에 적힌 대로 B에게 직접 확인함.
+    """
+    is_green = float(status == "GREEN")
+    is_safety_car = float(status == "SAFETY_CAR")
+    is_yellow = float(status == "FULL_COURSE_YELLOW")
+    is_finish = float(status == "FINISH")
+    code = float(TRACK_STATUS_CODE_MAP.get(status, 0))  # FINISH/미확인 상태는 GREEN(0)으로 폴백(가정)
+
+    return {
+        "TRACK_STATUS_SC": is_safety_car,
+        "TRACK_STATUS_YELLOW": is_yellow,
+        "TRACK_STATUS_CODE": code,
+        "TRACK_STATUS_GREEN": is_green,
+        "TRACK_STATUS_SAFETY_CAR": is_safety_car,
+        "TRACK_STATUS_FULL_COURSE_YELLOW": is_yellow,
+        "TRACK_STATUS_FINISH": is_finish,
+    }
 
 
 def load_race_laps(
@@ -30,9 +56,9 @@ def load_race_laps(
     laps_train.parquet / laps_val.parquet에서 특정 차량 한 대의 레이스 랩 시퀀스를 읽어온다.
     event_id, number를 안 주면 파일에서 처음 발견되는 (EVENT_ID, NUMBER) 조합을 그대로 쓴다
     (Day4 "실제 레이싱 팀 vs 규칙 기반" 비교용으로 특정 차량을 명시적으로 골라 넘기는 게 일반적).
-    PitstopEnv가 요구하는 LAP_NUMBER + FEATURE_COLUMNS 컬럼만 남겨서 반환한다.
+    PitstopEnv가 요구하는 LAP_NUMBER + FEATURE_COLUMNS + TRACK_STATUS 컬럼만 남겨서 반환한다.
     """
-    columns = ["EVENT_ID", "NUMBER", "LAP_NUMBER"] + FEATURE_COLUMNS
+    columns = ["EVENT_ID", "NUMBER", "LAP_NUMBER"] + FEATURE_COLUMNS + [TRACK_STATUS_COLUMN]
     df = pd.read_parquet(parquet_path, columns=columns)
 
     if event_id is not None:
@@ -109,7 +135,13 @@ class PitstopEnv(gym.Env):
         return self.race_laps.iloc[idx]
 
     def get_obs(self):
-        """실제 레이스 랩 데이터를 읽어 11차원 상태(기본 7 + 추세 4)를 반환한다."""
+        """실제 레이스 랩 데이터를 읽어 11차원 상태(기본 7 + 추세 4)를 반환한다.
+
+        평가기(XGBoost) 호출용으로는 트랙상태 인코딩까지 포함한 전체 피처 딕셔너리를
+        self._last_features에 같이 저장해둔다 — 7/11/18피처 모델 어느 걸 로드하든
+        _get_podium_prob()이 이름 기준으로 필요한 컬럼만 골라 쓸 수 있게(RL observation
+        space 자체를 모델 피처 수에 맞춰 매번 바꿀 필요 없음).
+        """
         row = self._current_row()
 
         self._pos_window.push(row["CLASS_POSITION"])
@@ -117,26 +149,31 @@ class PitstopEnv(gym.Env):
         pos_change, pos_slope = self._pos_window.change_and_slope()
         gap_change, gap_slope = self._gap_window.change_and_slope()
 
+        status = row[TRACK_STATUS_COLUMN] if TRACK_STATUS_COLUMN in row.index else "GREEN"
+
+        self._last_features = {
+            "LAP_PROGRESS_RATIO": row["LAP_PROGRESS_RATIO"],
+            "STINT_LAP": self.stint_lap,  # 실데이터의 STINT_LAP이 아니라 에이전트의 실제 피트 결정을 반영
+            "CLASS_POSITION": row["CLASS_POSITION"],
+            "GAP_TO_LEADER_SEC": row["GAP_TO_LEADER_SEC"],
+            "GAP_TO_AHEAD_SEC": row["GAP_TO_AHEAD_SEC"],
+            "WEATHER_CATEGORY": row["WEATHER_CATEGORY"],
+            "TRACK_TEMP": row["TRACK_TEMP"],
+            "pos_change_5lap": pos_change,
+            "gap_change_5lap": gap_change,
+            "pos_slope_5lap": pos_slope,
+            "gap_slope_5lap": gap_slope,
+            **encode_track_status(status),
+        }
+
         return np.array(
-            [
-                row["LAP_PROGRESS_RATIO"],
-                self.stint_lap,           # 실데이터의 STINT_LAP이 아니라 에이전트의 실제 피트 결정을 반영
-                row["CLASS_POSITION"],
-                row["GAP_TO_LEADER_SEC"],
-                row["GAP_TO_AHEAD_SEC"],
-                row["WEATHER_CATEGORY"],
-                row["TRACK_TEMP"],
-                pos_change,
-                gap_change,
-                pos_slope,
-                gap_slope,
-            ],
+            [self._last_features[col] for col in FEATURE_COLUMNS_TREND],
             dtype=np.float32,
         )
 
     def _get_podium_prob(self, obs):
-        """🌟 핵심: numpy 배열을 pandas DataFrame으로 변환하여 평가기에 전달"""
-        df = pd.DataFrame([obs], columns=FEATURE_COLUMNS_TREND)
+        """🌟 핵심: get_obs()가 저장해둔 전체 피처 딕셔너리를 DataFrame으로 변환해 평가기에 전달"""
+        df = pd.DataFrame([self._last_features])
         # predict_proba는 배열을 반환하므로 첫 번째 값([0]) 추출
         return self.evaluator.predict_proba(df)[0]
 

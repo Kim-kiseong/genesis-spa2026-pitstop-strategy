@@ -31,21 +31,30 @@ from rl_env.pitstop_env import PitstopEnv, load_race_laps
 PODIUM_PROB_THRESHOLD = 0.7
 TIRE_WEAR_THRESHOLD = 0.8
 
-# 트렌드 모델(11피처: 기본 7개 + pos_change_5lap 등 4개) — evaluator/podium_evaluator.json
-# (트렌드 피처 없는 7피처 정적 모델)은 순위/격차가 안 바뀌면 확률도 안 바뀌는 문제가 있어,
-# 최근 추세를 반영하는 이 모델을 기본으로 사용한다.
-DEFAULT_MODEL_PATH = Path(__file__).resolve().parent / "podium_evaluator_trend.json"
+# V3 모델(18피처: 기본 7 + 트렌드 4 + 트랙상태 7) — 2026-08-01 B가 그리드서치까지 반영해
+# 전달한 최종 모델("V3 파일 3개" 커밋). 트렌드 피처 없는 정적 7피처 모델은 순위/격차가 안
+# 바뀌면 확률도 안 바뀌는 문제가 있었고, 트랙상태(세이프티카/FCY) 정보도 이 모델부터 반영됨.
+DEFAULT_MODEL_PATH = Path(__file__).resolve().parent / "podium_evaluator_trend_grid.json"
 
 
-def should_pit(podium_prob: float, stint_lap: int) -> int:
-    """규칙 기반 피트인 결정. 반환값 1=피트인, 0=계속 주행."""
+def should_pit(
+    podium_prob: float,
+    stint_lap: int,
+    podium_prob_threshold: float = PODIUM_PROB_THRESHOLD,
+    tire_wear_threshold: float = TIRE_WEAR_THRESHOLD,
+) -> int:
+    """규칙 기반 피트인 결정. 반환값 1=피트인, 0=계속 주행.
+
+    임계값을 인자로 받게 해둔 건 rl_env/sweep_baseline.py가 여러 후보값으로
+    반복 실행하기 위함 — 기본값은 기존 동작(기획서 예시값)과 동일하게 유지.
+    """
     if stint_lap < MIN_STINT_LAPS:
         return 0
     if stint_lap >= MAX_STINT_LAPS:
         return 1
 
     tire_wear_ratio = stint_lap / MAX_STINT_LAPS
-    if podium_prob >= PODIUM_PROB_THRESHOLD and tire_wear_ratio >= TIRE_WEAR_THRESHOLD:
+    if podium_prob >= podium_prob_threshold and tire_wear_ratio >= tire_wear_threshold:
         return 1
     return 0
 
@@ -70,13 +79,18 @@ class RuleBasedResult:
         )
 
 
-def run_rule_based_episode(env: PitstopEnv, max_steps: int = 200) -> RuleBasedResult:
+def run_rule_based_episode(
+    env: PitstopEnv,
+    max_steps: int = 200,
+    podium_prob_threshold: float = PODIUM_PROB_THRESHOLD,
+    tire_wear_threshold: float = TIRE_WEAR_THRESHOLD,
+) -> RuleBasedResult:
     """규칙 기반 정책으로 한 에피소드를 끝까지 시뮬레이션한다."""
     obs, _ = env.reset()
     result = RuleBasedResult()
 
     for _ in range(max_steps):
-        action = should_pit(env.current_podium_prob, env.stint_lap)
+        action = should_pit(env.current_podium_prob, env.stint_lap, podium_prob_threshold, tire_wear_threshold)
 
         # 규칙과 액션 마스킹이 어긋나는 예외 상황(임계값 경계 등) 방어
         mask = env.action_masks()
