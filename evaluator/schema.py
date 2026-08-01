@@ -44,10 +44,14 @@ FEATURE_COLUMNS_TREND: list[str] = FEATURE_COLUMNS + TREND_FEATURE_COLUMNS
 # 인코딩해서 모델에 넣었다. 컬럼명이 헷갈리게 겹치는데, B에게 직접 확인한 매핑은 다음과 같다:
 #   - TRACK_STATUS_SC == TRACK_STATUS_SAFETY_CAR (중복 컬럼, 같은 값)
 #   - TRACK_STATUS_YELLOW == TRACK_STATUS_FULL_COURSE_YELLOW (중복 컬럼, 같은 값)
-#   - TRACK_STATUS_CODE: 순서형 인코딩. GREEN=0, SAFETY_CAR=1, FULL_COURSE_YELLOW=2
-#     (FINISH의 CODE 값은 B에게 확인 안 됨 — rl_env/pitstop_env.py::encode_track_status()에서
-#     0으로 폴백하는 걸로 가정해뒀으니, 확인되면 여기 주석과 함께 고칠 것)
-TRACK_STATUS_CODE_MAP: dict[str, int] = {"GREEN": 0, "SAFETY_CAR": 1, "FULL_COURSE_YELLOW": 2}
+#   - TRACK_STATUS_CODE: 순서형 인코딩. GREEN=0, SAFETY_CAR=1, FULL_COURSE_YELLOW=2, FINISH=3
+#     (2026-08-01 FINISH=3까지 B에게 확인 완료 — 이전엔 0으로 잘못 폴백하고 있었음)
+TRACK_STATUS_CODE_MAP: dict[str, int] = {
+    "GREEN": 0,
+    "SAFETY_CAR": 1,
+    "FULL_COURSE_YELLOW": 2,
+    "FINISH": 3,
+}
 
 TRACK_STATUS_FEATURE_COLUMNS: list[str] = [
     "TRACK_STATUS_SC",

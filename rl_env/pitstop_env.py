@@ -37,7 +37,7 @@ def encode_track_status(status: str) -> dict[str, float]:
     is_safety_car = float(status == "SAFETY_CAR")
     is_yellow = float(status == "FULL_COURSE_YELLOW")
     is_finish = float(status == "FINISH")
-    code = float(TRACK_STATUS_CODE_MAP.get(status, 0))  # FINISH/미확인 상태는 GREEN(0)으로 폴백(가정)
+    code = float(TRACK_STATUS_CODE_MAP.get(status, 0))  # RED_FLAG 등 미확인 상태만 GREEN(0)으로 폴백
 
     return {
         "TRACK_STATUS_SC": is_safety_car,
