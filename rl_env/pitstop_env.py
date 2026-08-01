@@ -112,13 +112,23 @@ class PitstopEnv(gym.Env):
 
     REQUIRED_COLUMNS = ["LAP_NUMBER"] + FEATURE_COLUMNS
 
+    # 피트인 페널티(확률 단위). 실제 피트로스는 preprocessing/config.py::PIT_LOSS_DEFAULT_S
+    # (30초)지만, 보상이 "확률 변화량" 단위라 초 단위를 그대로 뺄 수 없어 대략적인 확률
+    # 페널티로 근사한다 — 정밀하게 유도된 값이 아니라 실험적으로 조정 가능한 하이퍼파라미터.
+    # 2026-08-01: 이 페널티가 없어서 PPO가 "계속 피트인해서 STINT_LAP을 낮게 유지 ->
+    # 모델이 포디움 확률을 높게 예측"하는 리워드 해킹을 학습한 걸 발견해서 추가함.
+    DEFAULT_PIT_PENALTY = 0.05
+
     def __init__(
         self,
         race_laps: pd.DataFrame | list[pd.DataFrame],
         evaluator=None,
         trend_window: int = TREND_WINDOW_LAPS,
+        pit_penalty: float = DEFAULT_PIT_PENALTY,
     ):
         super().__init__()
+
+        self.pit_penalty = pit_penalty
 
         # 차량 1대(DataFrame)만 넘기면 예전처럼 매 에피소드 그 레이스만 재생(하위호환).
         # 여러 대(list)를 넘기면 reset()마다 그중 하나를 무작위로 골라 재생 —
@@ -238,9 +248,11 @@ class PitstopEnv(gym.Env):
         self.current_lap += 1
         obs = self.get_obs()
 
-        # 보상(Reward) = 확률 변화량 계산
+        # 보상(Reward) = 확률 변화량 - 피트인 페널티(피트로스를 대략적으로 반영)
         new_podium_prob = self._get_podium_prob(obs)
         reward = new_podium_prob - self.current_podium_prob
+        if action == 1:
+            reward -= self.pit_penalty
         self.current_podium_prob = new_podium_prob
 
         terminated = self.current_lap >= self.max_lap
