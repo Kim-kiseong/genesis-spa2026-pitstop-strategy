@@ -49,5 +49,7 @@ GROUP_KEYS: list[str] = ["EVENT_ID", "NUMBER"]
 WEATHER_CATEGORY_MAP: dict[int, str] = {0: "DRY", 1: "WET", 2: "MIXED"}
 
 # 액션 마스킹 상수 — preprocessing/config.py 와 반드시 동일값 유지 (README 경고 참고)
-MAX_STINT_LAPS: int = 34
+# 2026-08-01: 34는 실제 스틴트 길이(2025 SPA 4대 평균 15~21랩)보다 너무 길어서
+# 규칙 기반 에이전트가 사실상 항상 강제 피트로만 동작하는 문제가 있어 20으로 조정.
+MAX_STINT_LAPS: int = 20
 MIN_STINT_LAPS: int = 3

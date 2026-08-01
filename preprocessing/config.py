@@ -33,7 +33,9 @@ VAL_EVENTS = [
 CIRCUIT_UTC_OFFSET_H = {"SPA": 2, "IMOLA": 2}
 
 # ── 스틴트 임계값 (C의 액션 마스킹과 반드시 동일 값으로 맞출 것) ──
-MAX_STINT_LAPS = 34
+# 2026-08-01: 34는 실제 스틴트 길이(2025 SPA 4대 평균 15~21랩)보다 너무 길어서
+# 규칙 기반 에이전트가 사실상 항상 강제 피트로만 동작하는 문제가 있어 20으로 조정.
+MAX_STINT_LAPS = 20
 MIN_STINT_LAPS = 3
 PIT_LOSS_DEFAULT_S = 30.0
 
