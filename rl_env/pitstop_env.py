@@ -20,6 +20,9 @@ from rl_env.trend_features import SlidingTrendWindow
 DEFAULT_VAL_PARQUET = (
     Path(__file__).resolve().parent.parent / "preprocessing" / "processed" / "laps_val.parquet"
 )
+DEFAULT_TRAIN_PARQUET = (
+    Path(__file__).resolve().parent.parent / "preprocessing" / "processed" / "laps_train.parquet"
+)
 
 TRACK_STATUS_COLUMN = "TRACK_STATUS"
 
@@ -77,6 +80,25 @@ def load_race_laps(
     return df.sort_values("LAP_NUMBER").reset_index(drop=True)
 
 
+def load_race_pool(parquet_path: str | Path = DEFAULT_TRAIN_PARQUET) -> list[pd.DataFrame]:
+    """
+    parquet 안의 모든 (EVENT_ID, NUMBER) 차량-이벤트를 각각 별도 DataFrame으로 반환.
+    PPO 학습처럼 에피소드마다 다른 레이스를 무작위로 겪어야 할 때 PitstopEnv(race_laps=pool)에
+    그대로 넘기면 된다. 기본 대상은 laps_train.parquet — val은 규칙 기반/PPO 비교 평가용으로
+    남겨두고 학습에는 안 씀(ML 쪽 train/val 분리와 동일한 이유).
+    """
+    columns = ["EVENT_ID", "NUMBER", "LAP_NUMBER"] + FEATURE_COLUMNS + [TRACK_STATUS_COLUMN]
+    df = pd.read_parquet(parquet_path, columns=columns)
+
+    pool = [
+        group.sort_values("LAP_NUMBER").reset_index(drop=True)
+        for _, group in df.groupby(["EVENT_ID", "NUMBER"], sort=False)
+    ]
+    if not pool:
+        raise ValueError(f"load_race_pool: {parquet_path}에 데이터가 없습니다.")
+    return pool
+
+
 class PitstopEnv(gym.Env):
     """
     WEC 제네시스 피트스탑 의사결정 시뮬레이션 환경 (실제 레이스 리플레이 버전)
@@ -90,17 +112,25 @@ class PitstopEnv(gym.Env):
 
     REQUIRED_COLUMNS = ["LAP_NUMBER"] + FEATURE_COLUMNS
 
-    def __init__(self, race_laps: pd.DataFrame, evaluator=None, trend_window: int = TREND_WINDOW_LAPS):
+    def __init__(
+        self,
+        race_laps: pd.DataFrame | list[pd.DataFrame],
+        evaluator=None,
+        trend_window: int = TREND_WINDOW_LAPS,
+    ):
         super().__init__()
 
-        missing = set(self.REQUIRED_COLUMNS) - set(race_laps.columns)
-        if missing:
-            raise ValueError(f"PitstopEnv: race_laps에 필수 컬럼 누락: {missing}")
+        # 차량 1대(DataFrame)만 넘기면 예전처럼 매 에피소드 그 레이스만 재생(하위호환).
+        # 여러 대(list)를 넘기면 reset()마다 그중 하나를 무작위로 골라 재생 —
+        # PPO처럼 다양한 레이스를 겪어야 하는 학습에 씀 (rl_env/train_ppo.py 참고).
+        self._race_pool = [race_laps] if isinstance(race_laps, pd.DataFrame) else list(race_laps)
+        if not self._race_pool:
+            raise ValueError("PitstopEnv: race_laps 풀이 비어있습니다.")
+        for df in self._race_pool:
+            missing = set(self.REQUIRED_COLUMNS) - set(df.columns)
+            if missing:
+                raise ValueError(f"PitstopEnv: race_laps에 필수 컬럼 누락: {missing}")
 
-        self.race_laps = race_laps.sort_values("LAP_NUMBER").reset_index(drop=True)
-        self.lap_numbers = self.race_laps["LAP_NUMBER"].to_numpy()
-        self.first_lap = int(self.lap_numbers[0])
-        self.max_lap = int(self.lap_numbers[-1])
         self.trend_window = trend_window
 
         # Action Space: 0 (계속 주행), 1 (피트인)
@@ -117,9 +147,6 @@ class PitstopEnv(gym.Env):
         )
         self.observation_space = spaces.Box(low=low, high=high, dtype=np.float32)
 
-        self.current_lap = self.first_lap
-        self.stint_lap = 1
-
         self._pos_window = SlidingTrendWindow(trend_window)
         self._gap_window = SlidingTrendWindow(trend_window)
 
@@ -127,6 +154,18 @@ class PitstopEnv(gym.Env):
         # Day3부터는 evaluator/xgb_evaluator.py::load_evaluator()로 실제 XGBoost 모델을 넘긴다.
         self.evaluator = evaluator if evaluator is not None else DummyPodiumEvaluator()
         self.current_podium_prob = 0.0
+
+        self._select_race(0)  # 초기값 — 실제로는 매 reset()에서 풀에서 다시 뽑음
+
+    def _select_race(self, idx: int) -> None:
+        """풀에서 idx번째 레이스를 골라 현재 에피소드의 재생 대상으로 설정."""
+        race_laps = self._race_pool[idx].sort_values("LAP_NUMBER").reset_index(drop=True)
+        self.race_laps = race_laps
+        self.lap_numbers = race_laps["LAP_NUMBER"].to_numpy()
+        self.first_lap = int(self.lap_numbers[0])
+        self.max_lap = int(self.lap_numbers[-1])
+        self.current_lap = self.first_lap
+        self.stint_lap = 1
 
     def _current_row(self) -> pd.Series:
         # 데이터에 랩 결번이 있을 수 있어(레드플래그 드롭 등) 가장 가까운 이전 랩으로 보정.
@@ -179,8 +218,9 @@ class PitstopEnv(gym.Env):
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
-        self.current_lap = self.first_lap
-        self.stint_lap = 1
+
+        idx = int(self.np_random.integers(0, len(self._race_pool))) if len(self._race_pool) > 1 else 0
+        self._select_race(idx)
         self._pos_window.reset()
         self._gap_window.reset()
 
